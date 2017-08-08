@@ -1,4 +1,4 @@
-# UVP
+# Varpipe
 
 Set of scripts for analyzing NGS data
 
@@ -26,7 +26,7 @@ SnpEff Version 4.1
 
 Vcftools Version 0.1.126
 
-## Command line argument
+##Command line argument
 usage: Varpipeline -q STRING -r STRING -n STRING [-q2 STRING] [-o STRING]
                    [--keepfiles] [--bwa] [--all] [--gatk] [--samtools] [-a]
                    [-v] [-h] [--version]
