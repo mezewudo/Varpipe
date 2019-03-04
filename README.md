@@ -1,4 +1,4 @@
-# Varpipe
+3# Varpipe
 
 Set of scripts for analyzing NGS data
 
@@ -10,11 +10,11 @@ Bcftools Version 1.2
 
 BWA Version 0.7.12
 
-GATK Version 3.4.0
+GATK Version 3.8.0
 
 Picard Version 1.134
 
-Prinseq-lite.pl Version 0.20.4
+Trimmomatic Version 0.36
 
 Pigz Version 2.3.3
 
@@ -22,7 +22,7 @@ Qualimap Version 2.1.1
 
 Samtools Version 1.2
 
-SnpEff Version 4.1
+SnpEff Version 4.3
 
 Vcftools Version 0.1.126
 
@@ -41,4 +41,4 @@ options: -q input gzipped fastq file
          -- version tool version
 
          default mapping tool bwa 
-         default variant calling tool Samtools
+         default variant calling tool GATK 
