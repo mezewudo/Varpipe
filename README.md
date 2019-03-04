@@ -24,7 +24,7 @@ Samtools Version 1.2
 
 SnpEff Version 4.3
 
-Vcftools Version 0.1.126
+Vcftools Version 0.1.12b
 
 ## Command line argument
 usage: Varpipeline -q STRING -r STRING -n STRING [-q2 STRING] [-o STRING]
