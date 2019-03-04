@@ -1,4 +1,4 @@
-3# Varpipe
+# Varpipe
 
 Set of scripts for analyzing NGS data
 
