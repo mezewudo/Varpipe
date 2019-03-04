@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 """
 
 """
@@ -16,16 +16,12 @@ class snp():
 
     def __init__(self, input, outdir, reference, name, paired,input2, verbose, argString):
         self.name               = name
-        self.fOut1              = "Results"
-        self.fOut               = self.fOut1 + "/" + outdir
+        self.fOut               = outdir
         self.flog               = "QC"
         self.input              = input
         self.outdir             = self.fOut + "/tmp"
         self.tmp                = self.outdir + "/tmp"
-        self.prinseq            = self.fOut + "/prinseq"
-        self.fastqc            = self.fOut + "/fastqc"
-        self.qualimap           = self.fOut + "/qualimap"
-        self.kraken             = self.fOut + "/kraken"
+        self.trimmomatic        = self.fOut + "/trimmomatic"
         self.paired             = paired
         self.input2             = input2
         self.verbose            = verbose
@@ -40,23 +36,16 @@ class snp():
 
         # Create the output directory, and start the log file.
         self.__logged = False
-
-        if not os.path.isfile(self.fOut1):
-           self.__CallCommand('mkdir', ['mkdir', self.fOut1])
-
         self.__CallCommand('mkdir', ['mkdir', self.fOut])
 
         if not os.path.isfile(self.flog):
            self.__CallCommand('mkdir', ['mkdir', self.flog])
 
         self.__CallCommand('mkdir', ['mkdir', '-p', self.tmp])
-        self.__CallCommand('mkdir', ['mkdir', '-p', self.fastqc])
-        self.__CallCommand('mkdir', ['mkdir', '-p', self.prinseq])
-        self.__CallCommand('mkdir', ['mkdir', '-p', self.qualimap])
-        self.__CallCommand('mkdir', ['mkdir', '-p', self.kraken])
+        self.__CallCommand('mkdir', ['mkdir', '-p', self.trimmomatic])
         self.__log     = self.fOut + "/" + self.name + ".log"
-
-        with open("/Varpipe/scripts/config.yml", 'r') as ymlfile:
+        cwd = os.getcwd()
+        with open(os.path.join(os.path.dirname(__file__), "config.yml"), 'r') as ymlfile:
              cfg       = yaml.load(ymlfile)
         self.__lineage = self.fOut + "/" + self.name + ".lineage_report.txt"
         self.__logFH   = open(self.__log, 'w')
@@ -67,19 +56,12 @@ class snp():
         self.__logged  = True
 				
 	# Format Validation
-	self.__fastqval           = cfg['tools']['fastqvalidator']
-        #fastq QC
-        self.__fastqc             = cfg['tools']['fastqc']
-        self.__prinseq            = cfg['tools']['prinseq']
-        self.__kraken             = cfg['directories']['kraken']
-        self.__krakendb           = cfg['directories']['krakendb']
-        self.__krakenreport       = cfg['directories']['krakenreport']
         self.__pigz               = cfg['tools']['pigz']
         self.__unpigz             = cfg['tools']['unpigz']
+        self.__trimmomatic        = cfg['tools']['trimmomatic']
         # Mapping
         self.__bwa                = cfg['tools']['bwa']
         self.__samtools           = cfg['tools']['samtools']
-        self.__qualimap           = cfg['tools']['qualimap']
         # Picard-Tools
         self.__picard             = cfg['tools']['picard']
         # SNP / InDel Calling
@@ -94,13 +76,14 @@ class snp():
         self.__parser             = cfg['scripts']['parser']
         self.__lineage_parser     = cfg['scripts']['lineage_parser']
         self.__vcf_parser         = cfg['scripts']['vcf_parser']
+        self.__merger             = cfg['scripts']['merger']
         self.__lineages           = cfg['scripts']['lineages']
         self.__excluded           = cfg['scripts']['excluded']
         self.__coverage_estimator = cfg['scripts']['coverage_estimator']
-        self.resloci              = cfg['scripts']['resloci']
-        self.__bedlist            = cfg['scripts']['bedlist']     
+        self.__bedlist_one        = cfg['scripts']['bedlist_one']
+        self.__bedlist_two        = cfg['scripts']['bedlist_two']
+        self.__bedlist_merge      = cfg['scripts']['bedlist_merge']     
         self.__resis_parser       = cfg['scripts']['resis_parser']
-        self.__del_parser         = cfg['scripts']['del_parser']
         self.mutationloci         = cfg['scripts']['mutationloci']
         self.snplist              = cfg['scripts']['snplist']
         self.__threads            = cfg['other']['threads']
@@ -128,130 +111,27 @@ class snp():
             if err:
                 self.__logFH.write('Standard Error: \n' + err + '\n\n')
         return 1
-    
-    """ Input Validation """
-    def runVali(self):
-        self.__ifVerbose("Validating Input file.")
-        valiOut = self.fOut + "/validation"
-        self.__CallCommand('mkdir', ['mkdir', '-p', valiOut]) 
 
-        """ Validates format of input fastq files """	 			
-	if self.paired:
-           self.__CallCommand(['fastQValidator', valiOut + "/result1.out"], [self.__fastqval,'--file', self.input])
-           self.__CallCommand(['fastQValidator', valiOut + "/result2.out"], [self.__fastqval,'--file', self.input2])
-           output1 = valiOut + "/result1.out"
-           output2 = valiOut + "/result2.out"
-           self.__CallCommand(['cat', valiOut + "/result.out"], ['cat', output1, output2])
-           self.__CallCommand('rm', ['rm', output1, output2 ])
-        else:  
-	   self.__CallCommand(['fastQValidator', valiOut + '/result.out'], [self.__fastqval,'--file', self.input])
-        self.__CallCommand('mv', ['mv', valiOut + '/result.out', valiOut + '/Validation_report.txt'])	
-	output = valiOut + "/Validation_report.txt"
-        fh2 = open (output, 'r')
-        for line in fh2:
-            lined=line.rstrip("\r\n")
-            if lined.startswith("Returning"):
-               comments = lined.split(":")
-               if comments[2] != " FASTQ_SUCCESS":
-                  self.__CallCommand('mv', ['mv', self.input, self.flog])
-                  self.__CallCommand('mv', ['mv', self.fOut, self.flog])
-                  if self.paired:
-                     self.__CallCommand('mv', ['mv', self.input2, self.flog])  
-                  self.__logFH.write("Input not in fastq format\n")
-                  i = datetime.now()
-                  self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:  " + self.input + "\t" + "not in fastq format\n")
-                  sys.exit(1)
 
-    """ Fastq QC """
-    def runFastQC(self):
-        self.__ifVerbose("Performing  FastQC.")
-        self.__CallCommand('fastqc', [self.__fastqc, '--extract', '-t', self.__threads, '-o', self.fastqc, self.input])
-        fastqname = os.path.basename(self.input)
-        fastqcinput = fastqname.replace(".fastq.gz","_fastqc")
-        fastqcOut = self.fastqc + "/" + fastqcinput + "/fastqc_data.txt"
-        fh1 = open(fastqcOut, 'r')
-        for line in fh1:
-            lined = line.rstrip("\r\n")
-            if lined.startswith(">>Basic"):
-               fields = lined.split('\t')
-               if fields[1] != 'pass':
-                  i = datetime.now()
-                  self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.input + "\t" + "Fastq file QC flag\n")
-            break
-        fh1.close()
-        self.__CallCommand('rm', ['rm', '-r', self.fastqc + "/" + fastqcinput])
-    
-    """ Prinseq QC """
-    def runPrinseq(self):
-        self.__ifVerbose("Performing prinseq QC.")
+    """ QC Trimmomatic """
+    def runTrimmomatic(self):
+        self.__ifVerbose("Performing trimmomatic trimming.")
         if self.paired:
-           self.__CallCommand(['gunzip', self.prinseq + "/" + self.name + "1.fastq"],['gunzip','-c', self.input])
-           self.__CallCommand(['gunzip', self.prinseq + "/" + self.name + "2.fastq"],['gunzip', '-c', self.input2])
-           self.__CallCommand('prinseq', [self.__prinseq, '-fastq', self.prinseq + "/" + self.name + '1.fastq', '-fastq2', 
-                              self.prinseq + "/" + self.name + '2.fastq', '-min_qual_mean', '20', '-ns_max_n', '0', 
-                              '-out_format', '3','-out_good', self.prinseq + "/" + self.name + "good", 
-                              '-out_bad', self.prinseq + "/" + self.name + "bad" ])
+           self.__CallCommand('trimmomatic', ['java', '-jar', self.__trimmomatic, 'PE', '-threads', self.__threads, '-trimlog', self.trimmomatic + "/" + 'trimLog.txt', self.input, self.input2,
+                              self.trimmomatic + "/" + self.name + '_paired_1.fastq.gz', self.trimmomatic + "/" + self.name + '_unpaired_1.fastq.gz',
+                              self.trimmomatic + "/" + self.name + '_paired_2.fastq.gz', self.trimmomatic + "/" + self.name + '_unpaired_2.fastq.gz',
+                              'LEADING:3', 'TRAILING:3', 'SLIDINGWINDOW:4:15', 'MINLEN:40'])
         else:
-           self.__CallCommand(['gunzip', self.prinseq + "/" + self.name + ".fastq"],['gunzip','-c', self.input])
-           self.__CallCommand('prinseq', [self.__prinseq, '-fastq', self.prinseq + "/" + self.name + '.fastq', 
-                              '-min_qual_mean', '20', '-ns_max_n', '0', '-out_format', '3',
-                              '-out_good', self.prinseq + "/" + self.name + "good", 
-                              '-out_bad', 'null', '-log', self.prinseq + "/" + self.name + "log"])
+           self.__CallCommand('trimmomatic', ['java', '-jar', self.__trimmomatic, 'SE', '-threads', self.__threads, '-trimlog', self.trimmomatic + "/" + 'trimLog.txt',
+                              self.input, self.trimmomatic + "/" + self.name + '_paired.fastq.gz',
+                              'LEADING:3', 'TRAILING:3', 'SLIDINGWINDOW:4:15', 'MINLEN:40'])
         if self.paired:
-           self.__CallCommand('pigz', [self.__pigz, '-p', self.__threads, self.prinseq + "/" + self.name + "good" + "_1.fastq"])
-           self.__CallCommand('pigz', [self.__pigz, '-p', self.__threads, self.prinseq + "/" + self.name + "good" + "_2.fastq"])
-           self.__CallCommand('rm', ['rm', self.prinseq + "/" + self.name + "bad_1.fastq",
-                               self.prinseq + "/" + self.name + "bad_2.fastq",
-                               self.prinseq + "/" + self.name + "good_1_singletons.fastq",
-                               self.prinseq + "/" + self.name + "good_2_singletons.fastq",
-                               self.prinseq + "/" + self.name + '1.fastq', self.prinseq + "/" + self.name + '2.fastq'])
-           self.input  = self.prinseq + "/" + self.name + "good" + "_1.fastq.gz"
-           self.input2 = self.prinseq + "/" + self.name + "good" + "_2.fastq.gz"
+           self.__CallCommand('rm', ['rm', self.trimmomatic + "/" + self.name + "_unpaired_1.fastq.gz",
+                              self.trimmomatic + "/" + self.name + "_unpaired_2.fastq.gz"])
+           self.input  = self.trimmomatic + "/" + self.name + "_paired_1.fastq.gz"
+           self.input2 = self.trimmomatic + "/" + self.name + "_paired_2.fastq.gz"
         else:
-           self.__CallCommand('gzip', [self.__pigz, '-p', '10', self.prinseq + "/" + self.name + "good" + ".fastq"])
-           self.__CallCommand('rm', ['rm', self.prinseq + "/" + self.name + "bad.fastq",
-                              self.prinseq + "/" + self.name + "good_singletons.fastq",
-                              self.prinseq + "/" + self.name + '.fastq'])
-           self.input = self.prinseq + "/" + self.name + "good" + ".fastq.gz"
-
-    """ Species specificity check """
-    def runKraken(self):
-        self.__ifVerbose("Running Kraken.")
-        cwd = os.getcwd()
-        valiOut = self.fOut + "/validation"
-        self.__logFH.write("########## Running Kraken. ##########\n")
-        if self.paired:
-           self.__CallCommand(['kraken', self.kraken + "/kraken.txt"],['kraken', '--db', 
-                               'standard', '--gzip-compressed', self.input, self.input2,
-                               '--paired', '--fastq-input', '--threads', self.__threads, '--classified-out',
-                                self.name + "_classified_Reads.fastq"])
-           self.__CallCommand(['krakenreport', self.kraken + "/final_report.txt"],['kraken-report', '--db',
-                               'standard', self.kraken + "/kraken.txt"])
-        else:
-           self.__CallCommand(['kraken', self.kraken + "/kraken.txt"],['kraken', '--db', 
-                               'standard', '--gzip-compressed', self.input, '--fastq-input', 
-                               '--threads', self.__threads, '--classified-out', self.name + "_classified_Reads.fastq"])                     
-           self.__CallCommand(['krakenreport', self.kraken + "/final_report.txt"],['kraken-report', '--db',
-                               'standard', self.kraken + "/kraken.txt"])
-        self.__CallCommand('rm', ['rm',  cwd + "/" + self.name + "_classified_Reads.fastq"])
-        krakenOut = self.kraken + "/final_report.txt"
-        cov = 0
-        fh1 = open(krakenOut,'r')
-        for lines in fh1:
-            fields = lines.rstrip("\r\n").split("\t") 
-            if fields[5].find("Mycobacterium tuberculosis") != -1:
-               cov += float(fields[0])
-        if cov < 90:
-           self.__CallCommand('mv', ['mv', self.input, self.flog])
-           self.__CallCommand('mv', ['mv', self.fOut, self.flog])
-           self.__CallCommand('rm', ['rm', self.kraken + "/kraken.txt"])
-           self.__logFH.write("not species specific\n")
-           i = datetime.now()
-           self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.input + "\t" + "not species specific\n")
-           if self.paired:
-              self.__CallCommand('mv', ['mv', self.input2, self.flog])
-              self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.input2 + "\t" + "not species specific\n")
-           sys.exit(2) 
+           self.input = self.trimmomatic + "/" + self.name + "_paired.fastq.gz"
     
     """ Aligners """ 
     def runBWA(self, bwa):
@@ -313,14 +193,11 @@ class snp():
         self.__CallCommand('SortSam', ['java', '-Xmx8g', '-Djava.io.tmpdir=' + self.tmp, '-jar', self.__picard, 'SortSam',  
                            'INPUT='+ GATKdir +'/GATK.bam', 'SORT_ORDER=coordinate', 'OUTPUT='+ GATKdir +'/GATK_s.bam', 
                            'VALIDATION_STRINGENCY=LENIENT', 'TMP_DIR=' + self.tmp])
-        self.__ifVerbose("   Running Qualimap.")
-        self.__CallCommand('qualimap bamqc', [self.__qualimap, 'bamqc', '-bam', GATKdir +'/GATK_s.bam', '-outdir', self.qualimap])
         self.__ifVerbose("   Running MarkDuplicates.")
         self.__CallCommand('MarkDuplicates', ['java', '-Xmx8g', '-jar', self.__picard, 'MarkDuplicates',  
                            'INPUT='+ GATKdir +'/GATK_s.bam', 'OUTPUT='+ GATKdir +'/GATK_sdr.bam',
                            'METRICS_FILE='+ GATKdir +'/MarkDupes.metrics', 'ASSUME_SORTED=true', 
-                           'REMOVE_DUPLICATES=false', 'VALIDATION_STRINGENCY=LENIENT'])         
-        self.__ifVerbose("   Running AddOrReplaceReadGroups.")
+                           'REMOVE_DUPLICATES=false', 'VALIDATION_STRINGENCY=LENIENT'])
         self.__ifVerbose("   Running BuildBamIndex.")
         self.__CallCommand('BuildBamIndex', ['java', '-Xmx8g', '-jar', self.__picard, 'BuildBamIndex',  
                            'INPUT='+ GATKdir +'/GATK_sdr.bam', 'VALIDATION_STRINGENCY=LENIENT'])
@@ -366,82 +243,43 @@ class snp():
     def runGATK(self):
         if os.path.isfile(self.__finalBam):
             self.__ifVerbose("Calling SNPs/InDels with GATK.")
-            self.__logFH.write("########## Calling SNPs/InDels with GATK. ##########\n")
+            self.__logFH.write("########## Calling SNPs/InDels with HaplotypeCaller. ##########\n")
             GATKdir = self.outdir + "/GATK"
             samDir = self.outdir + "/SamTools"
             self.__CallCommand('mkdir', ['mkdir', '-p', samDir])
 
-            """ Call SNPs/InDels with GATK """
-            self.__ifVerbose("   Running UnifiedGenotyper.")
-            self.__CallCommand('Pileup', ['java', '-Xmx4g', '-jar', self.__gatk, '-T', 'Pileup',
-                               '-I', self.__finalBam, '-R', self.reference,'-o', self.fOut + "/" + self.name +'.mpileup',
-                               '-nct', '6', '-nt', '4'])
-            self.__CallCommand('UnifiedGenotyper', ['java', '-Xmx4g', '-jar', self.__gatk, '-T', 'UnifiedGenotyper', 
-                               '-glm', 'BOTH', '-R', self.reference, '-I', self.__finalBam, '-o',  GATKdir +'/gatk.vcf', 
-                               '-stand_call_conf', '20.0', '-stand_emit_conf', '20.0', '-nct', '6', '-nt', '4']) 
-            self.__CallCommand(['vcf-annotate filter', self.fOut + "/" + self.name +'_GATK.vcf'], 
-                               ['vcf-annotate', '--filter', 'SnpCluster=3,10/Qual=20/MinDP=10/MinMQ=20', GATKdir +'/gatk.vcf'])
-            self.__CallCommand(['vcftools remove-filtered-all', self.fOut + "/" + self.name +'_GATK_Resistance_filtered.vcf'], 
-                                  [self.__vcftools, '--vcf', self.fOut + "/" + self.name +'_GATK.vcf',
-                                  '--stdout', '--bed', self.resloci, '--remove-filtered-all', '--recode', '--recode-INFO-all'])
-            self.__CallCommand(['vcftools remove-filtered-all', self.fOut + "/" + self.name +'_GATK_filtered.vcf'], 
-                                   [self.__vcftools, '--vcf', self.fOut + "/" + self.name +'_GATK.vcf',
+            """ Call SNPs/InDels with VarDict """
+            self.__ifVerbose("   Running HaplotypeCaller.")
+            self.__CallCommand('HaplotypeCaller', ['java', '-Xmx4g', '-jar', self.__gatk, '-T', 'HaplotypeCaller',
+                               '-R', self.reference, '-I', self.__finalBam, '-o',  GATKdir +'/gatk.g.vcf',
+                               '--emitRefConfidence', 'GVCF',  '-stand_call_conf', '20.0', '-nct', '4'])
+            self.__CallCommand('GenotypeGVCFs', ['java', '-Xmx4g', '-jar', self.__gatk, '-T', 'GenotypeGVCFs',
+                               '-R', self.reference,'--variant', GATKdir +'/gatk.g.vcf', '-o', GATKdir +'/gatk.vcf',])
+            self.__CallCommand('ReadBackedPhasing', ['java', '-Xmx4g', '-jar', self.__gatk, '-T', 'ReadBackedPhasing',
+                               '-R', self.reference, '-I', self.__finalBam, '-V',  GATKdir +'/gatk.vcf', '-o', GATKdir +'/gatk_phased.vcf',
+                               '--phaseQualityThresh', '20.0',  '-enableMergeToMNP', '-maxDistMNP', '2'])
+            self.__CallCommand(['merge vcfs', self.fOut + "/" + self.name +'_gatk.vcf'],
+                               [self.__merger, GATKdir +'/gatk.vcf', GATKdir +'/gatk_phased.vcf'])  
+            self.__CallCommand(['vcf-annotate filter', self.fOut + "/" + self.name +'_gatk_marked.vcf'], 
+                               [self.__vcfannotate, '--filter', 'SnpCluster=3,10/Qual=20/MinDP=10/MinMQ=20', self.fOut + "/" + self.name +'_gatk.vcf'])
+            self.__CallCommand(['vcftools remove-filtered-all', self.fOut + "/" + self.name +'_gatk_filtered.vcf'], 
+                                   [self.__vcftools, '--vcf', self.fOut + "/" + self.name +'_gatk_marked.vcf',
                                    '--stdout', '--exclude-bed', self.__excluded, '--remove-filtered-all', '--recode', '--recode-INFO-all'])
             self.__CallCommand(['samtools depth', samDir + '/coverage.txt'],
                                 [self.__samtools,'depth', self.__finalBam])
-            self.__CallCommand(['bedtools coverage', samDir + '/bed_coverage.txt' ],
-                                [self.__bedtools,'coverage', '-abam', self.__finalBam, '-b', self.__bedlist])
-            self.__CallCommand(['sort', samDir + '/bed_sorted_coverage.txt' ],
-                                ['sort', '-nk', '2', samDir + '/bed_coverage.txt'])
+            self.__CallCommand(['bedtools coverage', samDir + '/bed_1_coverage.txt' ],
+                                [self.__bedtools, 'coverage', '-abam', self.__finalBam, '-b', self.__bedlist_one])
+            self.__CallCommand(['bedtools coverage', samDir + '/bed_2_coverage.txt' ],
+                                [self.__bedtools, 'coverage', '-abam', self.__finalBam, '-b', self.__bedlist_two])
+            self.__CallCommand(['sort', samDir + '/bed_1_sorted_coverage.txt' ],['sort', '-nk', '6', samDir + '/bed_1_coverage.txt'])
+            self.__CallCommand(['sort', samDir + '/bed_2_sorted_coverage.txt' ],['sort', '-nk', '6', samDir + '/bed_2_coverage.txt'])
 
             """ Set final VCF file. """
             
             if not self.__finalVCF: 
-                self.__finalVCF = self.fOut + "/" + self.name +'_GATK_filtered.vcf'
+                self.__finalVCF = self.fOut + "/" + self.name +'_gatk_filtered.vcf'
         else:
             # print error
-            pass
-
-    def runSamTools(self):
-        """ Call SNPs and InDels using SamTools """
-        if os.path.isfile(self.__finalBam):
-            self.__ifVerbose("Calling SNPs/InDels with SamTools.")
-            self.__logFH.write("########## Calling SNPs/InDels with SamTools. ##########\n")
-            samDir = self.outdir + "/SamTools"
-            self.__CallCommand('mkdir', ['mkdir', '-p', samDir])
-
-            """ Call SNPs / InDels using mpileup, bcftools, vcfutils. """
-            self.__ifVerbose("   Running samtools mpileup.")
-            self.__CallCommand(['samtools mpileup', samDir + '/samtools.mpileup'], [self.__samtools, 'mpileup', '-Q', '20', '-q', '20', '-t', 'DP,DV,DPR', 
-                               '-ugf', self.reference, self.__finalBam])
-            self.__ifVerbose("   Running bcftools view.")
-            self.__CallCommand(['bcftools view', samDir + '/samtools.vcf'], 
-                               [self.__bcftools, 'call', '-vcf', 'GQ', samDir + '/samtools.mpileup'])
-            self.__ifVerbose("   Running vcfutils.pl varFilter.")
-            self.__CallCommand(['vcfutils.pl varFilter', samDir +'/SamTools.vcf'], 
-                               [self.__vcfutils, 'varFilter', '-D1500', samDir + '/samtools.vcf'])
-            self.__ifVerbose("   Filtering VCf file using vcftools.")
-            self.__CallCommand(['vcf-annotate filter', self.fOut + "/" + self.name +'_SamTools.vcf'], 
-                               ['vcf-annotate', '--filter', 'SnpCluster=3,10/Qual=20/MinDP=10/MinMQ=20', samDir +'/SamTools.vcf'])
-            self.__CallCommand(['vcftools remove-filtered-all', self.fOut + "/" + self.name +'_SamTools_Resistance_filtered.vcf'], 
-                                  [self.__vcftools, '--vcf', self.fOut + "/" + self.name +'_SamTools.vcf',
-                                  '--stdout', '--bed', self.resloci, '--remove-filtered-all', '--recode', '--recode-INFO-all'])
-            self.__CallCommand(['vcftools remove-filtered-all', self.fOut + "/" + self.name +'_SamTools_filtered.vcf'], 
-                                   [self.__vcftools, '--vcf', self.fOut + "/" + self.name +'_SamTools.vcf',
-                                   '--stdout', '--exclude-bed', self.__excluded, '--remove-filtered-all', '--recode', '--recode-INFO-all'])
-            self.__CallCommand('mv', ['mv', samDir + '/samtools.mpileup', self.fOut + "/" + self.name + '.mpileup'])
-            self.__CallCommand(['samtools depth', samDir + '/coverage.txt'],
-                                [self.__samtools,'depth', self.__finalBam])
-            self.__CallCommand(['bedtools coverage', samDir + '/bed_coverage.txt' ],
-                                ['bedtools','coverage', '-abam', self.__finalBam, '-b', self.__bedlist])
-            self.__CallCommand(['sort', samDir + '/bed_sorted_coverage.txt' ],
-                                ['sort', '-nk', '2', samDir + '/bed_coverage.txt'])                 
-            
-            """ Set final VCF """
-            if not self.__finalVCF: 
-                self.__finalVCF = self.fOut + "/" + self.name +'_SamTools_filtered.vcf'     
-        else:
-            # print error  
             pass  
        
     def annotateVCF(self):
@@ -454,19 +292,7 @@ class snp():
            self.__annotation = self.fOut + "/" + self.name +'_annotation.txt'
            self.__ifVerbose("parsing final Annotation.")
            self.__CallCommand(['parse annotation', self.fOut + "/" + self.name +'_Final_annotation.txt'],
-                              ['python', self.__parser, self.__annotation, self.name, self.mutationloci])
-           if os.path.isfile(self.fOut + "/" + self.name +'_SamTools_Resistance_filtered.vcf'):
-              self.__CallCommand(['SnpEff', self.fOut + "/" + self.name +'_Resistance_annotation.txt'],
-                                 ['java', '-Xmx4g', '-jar', self.__annotator, 'NC_000962', self.fOut + "/" + self.name +'_SamTools_Resistance_filtered.vcf']) 
-              self.__ifVerbose("parsing final Annotation.")
-              self.__CallCommand(['parse annotation', self.fOut + "/" + self.name +'_Resistance_Final_annotation.txt'],
-                              ['python', self.__parser, self.fOut + "/" + self.name +'_Resistance_annotation.txt', self.name, self.mutationloci])
-           elif os.path.isfile(self.fOut + "/" + self.name +'_GATK_Resistance_filtered.vcf'):
-              self.__CallCommand(['SnpEff', self.fOut + "/" + self.name +'_Resistance_annotation.txt'],
-                                 ['java', '-Xmx4g', '-jar', self.__annotator, 'NC_000962', self.fOut + "/" + self.name +'_GATK_Resistance_filtered.vcf']) 
-              self.__ifVerbose("parsing final Annotation.")
-              self.__CallCommand(['parse annotation', self.fOut + "/" + self.name +'_Resistance_Final_annotation.txt'],
-                              ['python', self.__parser, self.fOut + "/" + self.name +'_Resistance_annotation.txt', self.name, self.mutationloci])
+                               ['python', self.__parser, self.__annotation, self.name, self.mutationloci])
         else:
             self.__ifVerbose("Use SamTools, GATK, or Freebayes to annotate the final VCF.")
         self.__CallCommand('rm', ['rm',  cwd + "/snpEff_genes.txt"])
@@ -489,23 +315,24 @@ class snp():
                if "No Informative SNPs" in lined:
                    self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "no clear lineage classification\n")
                    self.__unclear = "positive"
-               elif "no precise lineage" in lined:
+               elif "no precise lineage" in lined or "mixed lineage(s)" in lined:
                    self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "no clear lineage classification\n")
                    self.__mixed = "positive"
                elif "no concordance" in lined:
                    self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "no clear lineage classification\n")
-                   self.__mixed = "positive" 
+                   self.__mixed = "positive"
+               elif len(lined) < 3:
+                  self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "no clear lineage classification\n")
+                  self.__unclear = "positive" 
            fh1.close()
-        if os.path.isfile(self.fOut + "/" + self.name +'_Resistance_Final_annotation.txt'):
-           fh2 = open(self.fOut + "/" + self.name +'_Resistance_Final_annotation.txt','r')
+        if os.path.isfile(self.fOut + "/" + self.name +'_Final_annotation.txt'):
+           fh2 = open(self.fOut + "/" + self.name +'_Final_annotation.txt','r')
            for lines in fh2:
               lined = lines.rstrip("\r\n").split("\t")
               if lined[16] == "rrs":
                  count1 += 1
               elif lined[16] == "rrl":
                  count2 += 1
-              if lined[9] == "MNV":
-                 count3 += 1
            if count1 > 5 or count2 > 5 :
               self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "mixed species suspected\n")
               self.__mixed = "positive"
@@ -523,57 +350,45 @@ class snp():
         cov = ""
         notes = []
         dele = True
+        wid  = ""
 
         self.__ifVerbose("Running Genome Coverage Statistics")
         samDir = self.outdir + "/SamTools"
         i = datetime.now()
         self.__CallCommand(['coverage estimator', self.fOut + "/" + self.name + '_Coverage.txt'],
-                            ['python', self.__coverage_estimator, samDir + '/coverage.txt'])
-        self.__CallCommand(['genome region coverage estimator', self.fOut + "/" + self.name + '_genome_region_coverage.txt'],
-                            ['python', self.__resis_parser, samDir + '/bed_sorted_coverage.txt', samDir + '/coverage.txt'])
+                            ['python', self.__coverage_estimator, samDir + '/coverage.txt', self.name])
+        self.__CallCommand(['genome region coverage estimator', samDir + '/genome_region_coverage_1.txt'],
+                            ['python', self.__resis_parser, samDir + '/bed_1_sorted_coverage.txt', samDir + '/coverage.txt', self.name])
+        self.__CallCommand(['genome region coverage estimator', samDir + '/genome_region_coverage_2.txt'],
+                            ['python', self.__resis_parser, samDir + '/bed_2_sorted_coverage.txt', samDir + '/coverage.txt', self.name])
+        self.__CallCommand(['cat' , samDir + '/genome_region_coverage.txt'],['cat', samDir + '/genome_region_coverage_1.txt', samDir + '/genome_region_coverage_2.txt'])
+        self.__CallCommand(['sort', self.fOut + "/" + self.name + '_genome_region_coverage.txt' ],['sort', '-nk', '3', samDir + '/genome_region_coverage.txt'])
+        self.__CallCommand('sed',['sed', '-i', '1d', self.fOut + "/" + self.name + '_genome_region_coverage.txt'])
+        
         if os.path.isfile(self.fOut + "/" + self.name + '_Coverage.txt'):
           fh2 = open(self.fOut + "/" + self.name + '_Coverage.txt','r')
           for line in fh2:
-             if line.startswith("Average"):
-                cov_str = line.split(":")
-                cov = cov_str[1].strip(" ")
-             if line.startswith("Percentage"):
-                wid_str = line.split(":")
-                wid = wid_str[1].strip(" ")
+             if line.startswith("Sample"):
+                continue
+             cov_str = line.split("\t")
+             cov = cov_str[1]
+             wid = cov_str[2]
           if cov != '' and int(cov) < 10:
             self.__low = "positive"
             self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "low genome coverage depth\n")
           if wid != '' and float(wid) < 94.99:
             self.__low = "positive"
             self.__logFH2.write(i.strftime('%Y/%m/%d %H:%M:%S') + "\t" + "Input:" + "\t" + self.name + "\t" + "low genome coverage width\n")
-          fh2.close()                  
-          self.__CallCommand(['loci deletion parser', self.fOut + "/" + self.name + '_deleted_loci.txt'], 
-                             ['python', self.__del_parser, self.fOut + "/" + self.name, self.name, self.__bedlist])
-        if os.path.isfile(self.fOut + "/" + self.name + '_deleted_loci.txt'):
-          fh3 = open(self.fOut + "/" + self.name + '_deleted_loci.txt','r')
-          for line in fh3:
-            fields = line.rstrip("\r\n").split("\t")
-            notes.append(fields[9])
-          for keys in notes:
-             if "Complete" in keys or "Partial" in keys:
-                dele = False
-          if dele == False:
-            fh3.close()
-          else:
-           fh3.close()
-           self.__CallCommand('rm', ['rm',  self.fOut + "/" + self.name + '_deleted_loci.txt']) 
+          fh2.close()                   
          
     def cleanUp(self):
         """ Clean up the temporary files, and move them to a proper folder. """
         i = datetime.now()
         self.__CallCommand('rm', ['rm', '-r', self.outdir])
         self.__CallCommand('rm', ['rm',  self.fOut + "/" + self.name +'_annotation.txt'])
-        self.__CallCommand('rm', ['rm',  self.fOut + "/" + self.name +'_Resistance_annotation.txt'])
         self.__CallCommand('rm', ['rm',  self.fOut + '/'+ self.name + '_sdrcsm.bai'])
-        self.__CallCommand('rm', ['rm',  self.fOut + "/" + self.name +'.mpileup'])
         self.__CallCommand('rm', ['rm',  self.__finalBam])
-        self.__CallCommand('rm', ['rm',  self.kraken + "/kraken.txt"])
-        self.__CallCommand('rm', ['rm', '-r', self.prinseq])
+        self.__CallCommand('chmod', ['chmod', '777',  self.fOut])
         if self.__mixed == "positive":
            self.__CallCommand('mv', ['mv', self.fOut, self.flog])
         if self.__unclear == "positive":

@@ -1,38 +1,32 @@
 tools:
-    bcftools: /Varpipe/bin/bcftools/bcftools
-    bedtools: /Varpipe/bin/bedtools
-    vcfannotate: /Varpipe/bin/vcftools/bin/vcf-annotate
-    fastqvalidator: /Varpipe/bin/fastQValidator
-    bwa: /Varpipe/bin/bwa
-    samtools: /Varpipe/bin/samtools/samtools
-    qualimap: /Varpipe/bin/qualimap/qualimap
-    pigz: /Varpipe/bin/pigz
-    unpigz: /Varpipe/bin/unpigz
-    prinseq: /Varpipe/bin/prinseq-lite.pl
-    fastqc: /Varpipe/bin/FastQC/fastqc
-    picard: /Varpipe/bin/picard/picard.jar
-    gatk: /Varpipe/bin/GenomeAnalysisTK.jar
-    vcftools: /Varpipe/bin/vcftools/bin/vcftools
-    vcfutils: /Varpipe/bin/bcftools/vcfutils.pl 
-    annotator: /Varpipe/bin/snpEff/snpEff.jar
-        
-directories:
-    kraken: /KRAKEN/kraken
-    krakendb: /KRAKEN/customdb
-    krakenreport: /KRAKEN/kraken-report
-
+    bcftools: /Varpipe/bcftools/bcftools
+    bedtools: /Varpipe/bedtools
+    vcfannotate: /Varpipe/vcftools/bin/vcf-annotate
+    bwa: /Varpipe/bwa
+    samtools: /Varpipe/samtools
+    qualimap: /Varpipe/qualimap_v2.1.1/qualimap
+    pigz: /Varpipe/pigz
+    unpigz: /Varpipe/unpigz
+    fastqc: /Varpipe/FastQC/fastqc
+    picard: /Varpipe/picard/picard.jar
+    trimmomatic: /Varpipe/trimmomatic-0.36.jar
+    gatk: /Varpipe/GenomeAnalysisTK.jar
+    vcftools: /Varpipe/vcftools/bin/vcftools
+    vcfutils: /Varpipe/bcftools/vcfutils.pl 
+    annotator: /Varpipe/snpEff/snpEff.jar
 scripts:
-    parser: /Varpipe/bin/parse_annotation.py
-    lineage_parser: /Varpipe/bin/lineage_parser.py
-    vcf_parser: /scicomp/home/krt7/binary/raw_vcf_parse.py
-    lineages: /Varpipe/bin/lineage_markers.txt
-    excluded: /Varpipe/bin/excluded_loci.txt
-    coverage_estimator: /Varpipe/bin/coverage_estimator.py
-    resloci: /Varpipe/bin/included_loci.txt
-    bedlist: /Varpipe/bin/bed_list.txt     
-    resis_parser: /Varpipe/bin/resis_parser.py
-    del_parser: /Varpipe/bin/del_parse.py
-    mutationloci: /Varpipe/bin/mutation_loci.txt
-    snplist: /Varpipe/bin/snps.vcf
+    parser: /Varpipe/parse_annotation.py
+    lineage_parser: /Varpipe/lineage_parser.py
+    vcf_parser: /Varpipe/raw_vcf_parse.py
+    lineages: /Varpipe/lineage_markers.txt
+    excluded: /Varpipe/excluded_loci.txt
+    coverage_estimator: /Varpipe/coverage_estimator.py
+    bedlist_one: /Varpipe/bed_1.txt
+    bedlist_two: /Varpipe/bed_2.txt
+    bedlist_merge: /Varpipe/bed_merge.txt     
+    resis_parser: /Varpipe/resis_parser.py
+    mutationloci: /Varpipe/mutation_loci.txt
+    snplist: /Varpipe/snps.vcf
+    merger: /Varpipe/merge_vcfs.py     
 other:
-    threads: '12'
+    threads: '8'

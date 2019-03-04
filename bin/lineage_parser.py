@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 
 """ This script accepts the final annotation file and the lineage marker SNPs file  """
 """ and infers the lineage and possible sublineage classification of the isolate  """
@@ -94,7 +94,7 @@ if len(prevlin) == 0:
              discordance = True
       if discordance:
          print "no precise lineage inferred"
-         print >> fh3, "no precise lineage inferred"
+         print >> fh3, input4 + "\t" + "mixed lineage(s)" + "\t" + "mixed lineage(s)" + "\t" + "NA"
          sys.exit(1)
       else:
          if len(split_first) > 1:
@@ -111,7 +111,7 @@ if len(prevlin) == 0:
                print >> fh3, input4 + "\t" + "4" + "\t" + "Euro American" + "\t" + "4.9"  
          else:
             print "No Informative SNPs detected"
-            print >> fh3, "No Informative SNPs detected"
+            print >> fh3, input4 + "\t" + "No Informative SNPs detected" + "\t" + "No Informative SNPs detected" + "\t" + "NA"
 else:
       if len(prevlin) > 1:
         for j in range(0,len(prevlin)): 
@@ -119,7 +119,7 @@ else:
                discordance = True
         if discordance == True:
            print "no concordance between predicted lineage and sublineage(s)"
-           print >> fh3, "no concordance between predicted lineage and sublineage(s)"
+           print >> fh3, input4 + "\t" + "mixed lineage(s)" + "\t" + "mixed lineage(s)" + "\t" + "NA"
            sys.exit(1) 
       else:
         if len(sublinn) < 1: 
@@ -134,7 +134,7 @@ else:
                discordance = True
            if discordance:
               print "no precise lineage inferred"
-              print >> fh3, "no precise lineage inferred"
+              print >> fh3, input4 + "\t" + "mixed lineage(s)" + "\t" + "mixed lineage(s)" + "\t" + "NA"
               sys.exit(1)
            else:
               print "Lineage: " + prevlin[0] + " " + tribes[int(prevlin[0])]
